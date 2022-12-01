@@ -276,3 +276,6 @@ def draw_power_plant_graph(G : nx.Graph, path : str, node_size=100, figsize=(6,6
     nx.draw(G=G, pos=pos,ax=ax, node_size=node_size, node_color=np.array(colors))
     fig.savefig(path, transparent=transparent, bbox_inches='tight')
     plt.close(fig)  
+
+def say_hello():
+    print("Hello!")
