@@ -28,6 +28,17 @@ class Agent:
         Current energy level of the energy reservoir.
         Default: None
 
+    Variabels of an agent
+    ---------------------
+    * position
+    * demand_profile
+    * production_profile
+    * is_producer
+    * has_reservoir
+    * capacity_reservoir
+    * current_reservoir
+    * surplus
+
     Returns
     -------
     None.
@@ -64,4 +75,4 @@ class Agent:
         self.capacity_reservoir = capacity_reservoir
         self.current_reservoir = current_reservoir
 
-        self.surplus = production_profile - demand_profile
+        self.surplus = self.production_profile - self.demand_profile
