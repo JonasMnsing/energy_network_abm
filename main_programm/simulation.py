@@ -329,7 +329,7 @@ def simulate(
     positions: np.array = None,
     producers_reservoir: np.array = None,
     current_reservoir: np.array = None,
-    index_interval: list = [8, 17],
+    index_interval: list = [0, 23],
     links_per_threshold: float = 0.05
     ):
     """
