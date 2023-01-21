@@ -35,13 +35,13 @@ def link_agents(
 
     return network_matrix
 
-def exchange_energy_wo_reservoir(
+def exchange_energy(
     agent1,
     agent2,
     time: int
     ) -> float:
     """
-    Helper function to exchange energy between to agents without a reservoir.
+    Helper function to exchange energy between two agents.
 
     Parameters
     ----------
@@ -86,6 +86,74 @@ def exchange_energy_wo_reservoir(
                 agent1.surplus[time] = 0
                 return exchange
 
+def save_energy_to_reservoir(
+    agent,
+    time: int):
+    """
+    Helper function to save all remaining surplus in the reservoir.
+
+    Parameters
+    ----------
+    * agent: Agent
+    * time: int
+        Time at which the energy is saved.
+
+    Returns
+    -------
+    How much energy was saved (float)
+    
+    """
+    if not agent.is_producer \
+       or not agent.has_reservoir \
+       or agent.surplus[time] <= 0 \
+       or agent.current_reservoir >= agent.capacity_reservoir:
+        return 0
+    
+    if agent.capacity_reservoir <= agent.current_reservoir+agent.surplus[time]:
+        saved = agent.capacity_reservoir - agent.current_reservoir
+        agent.current_reservoir = agent.capacity_reservoir
+        agent.surplus[time] -= saved
+        return saved
+    else:
+        saved = agent.surplus[time]
+        agent.current_reservoir += agent.surplus[time]
+        agent.surplus[time] = 0
+        return saved
+
+def use_energy_from_reservoir(
+    agent,
+    time: int):
+    """
+    Helper function to use the energy from the reservoir.
+
+    Parameters
+    ----------
+    * agent: Agent
+    * time: int
+        Time at which the energy is used.
+
+    Returns
+    -------
+    How much energy was used (float)
+    
+    """
+    if not agent.is_producer \
+       or not agent.has_reservoir \
+       or agent.surplus[time] >= 0 \
+       or agent.current_reservoir <= 0:
+        return 0
+    
+    if -agent.surplus[time] >= agent.current_reservoir:
+        used = agent.current_reservoir
+        agent.current_reservoir = 0
+        agent.surplus[time] += used
+        return used
+    else:
+        used = -agent.surplus[time]
+        agent.current_reservoir += agent.surplus[time]
+        agent.surplus[time] = 0
+        return used
+
 def distr_energy1(
     city: City,
     network_matrix: np.array,
@@ -125,13 +193,141 @@ def distr_energy1(
             total_pro += city.agents[i].production_profile[time]
             for j in range(i):
                 if network_matrix[i, j]:
-                    exchange = exchange_energy_wo_reservoir(
+                    exchange = exchange_energy(
                         city.agents[i],
                         city.agents[j],
                         time)
                     if exchange > 0:
                         links_used[i, j] += 1
                         total_exchange += exchange
+                        
+    for i in range(population):
+        if city.agents[i].surplus[time] < 0:
+            total_central_supply -= city.agents[i].surplus[time]
+        else:
+            total_energy_wasted += city.agents[i].surplus[time]
+
+    return total_con, total_pro, total_exchange, \
+           total_central_supply, total_energy_wasted, links_used
+
+def distr_energy2(
+    city: City,
+    network_matrix: np.array,
+    time: int
+    ):
+    """
+    Realistic energy distribution with energy reservoirs.
+    First every producer saves his surplus in his reservoir/uses his energy
+    from the reservoir. If there is still energy left, it is distributed
+    randomly.
+
+    Parameters
+    ----------
+    * city: City
+    * network_matrix: np.array
+    * time: int
+
+    Returns
+    -------
+    * Total power demand during the timestep (float)
+    * Total production during the timestep (float)
+    * Total exchange during the timestep (float)
+    * Total central supply during the timestep (float)
+    * Total energy wasted during the timestep (float)
+    * Links used during the timestep (array of shape(pop, pop) with the
+       corresponding number of link usages in the lower left triangular matrix)
+    
+    """
+    population = len(city.agents)
+
+    total_con = 0
+    total_pro = 0
+    total_exchange = 0
+    total_central_supply = 0
+    total_energy_wasted = 0
+    links_used = np.zeros((population, population))
+
+    for i in range(population):
+        save_energy_to_reservoir(city.agents[i], time)
+        use_energy_from_reservoir(city.agents[i], time)
+
+    for i in range(population):
+            total_con += city.agents[i].demand_profile[time]
+            total_pro += city.agents[i].production_profile[time]
+            for j in range(i):
+                if network_matrix[i, j]:
+                    exchange = exchange_energy(
+                        city.agents[i],
+                        city.agents[j],
+                        time)
+                    if exchange > 0:
+                        links_used[i, j] += 1
+                        total_exchange += exchange
+                        
+    for i in range(population):
+        if city.agents[i].surplus[time] < 0:
+            total_central_supply -= city.agents[i].surplus[time]
+        else:
+            total_energy_wasted += city.agents[i].surplus[time]
+
+    return total_con, total_pro, total_exchange, \
+           total_central_supply, total_energy_wasted, links_used
+
+def distr_energy3(
+    city: City,
+    network_matrix: np.array,
+    time: int
+    ):
+    """
+    Communistic energy distribution with energy reservoirs.
+    First every producer uses his saved energy from the reservoir (if surplus
+    is negative). Then remaining surplus is distributed randomly.
+    If there is still energy left, it is saved in the reservoirs.
+    
+    Parameters
+    ----------
+    * city: City
+    * network_matrix: np.array
+    * time: int
+
+    Returns
+    -------
+    * Total power demand during the timestep (float)
+    * Total production during the timestep (float)
+    * Total exchange during the timestep (float)
+    * Total central supply during the timestep (float)
+    * Total energy wasted during the timestep (float)
+    * Links used during the timestep (array of shape(pop, pop) with the
+       corresponding number of link usages in the lower left triangular matrix)
+    
+    """
+    population = len(city.agents)
+
+    total_con = 0
+    total_pro = 0
+    total_exchange = 0
+    total_central_supply = 0
+    total_energy_wasted = 0
+    links_used = np.zeros((population, population))
+
+    for i in range(population):
+        use_energy_from_reservoir(city.agents[i], time)
+
+    for i in range(population):
+            total_con += city.agents[i].demand_profile[time]
+            total_pro += city.agents[i].production_profile[time]
+            for j in range(i):
+                if network_matrix[i, j]:
+                    exchange = exchange_energy(
+                        city.agents[i],
+                        city.agents[j],
+                        time)
+                    if exchange > 0:
+                        links_used[i, j] += 1
+                        total_exchange += exchange
+                        
+    for i in range(population):
+        save_energy_to_reservoir(city.agents[i], time)
                         
     for i in range(population):
         if city.agents[i].surplus[time] < 0:
@@ -433,32 +629,145 @@ def simulate(
 
     return links_percentage, energy_loss_percentage, supply_percentage
 
-def energy_loss():
-    pass
+def batch_simulate(
+    link_agents,
+    distr_energy,
+    base_demand_profile: np.array,
+    base_production_profile: np.array,
+    connection_lengths: np.array,
+    capacity_reservoir: np.array,
+    producer_percentage: np.array,
+    reservoir_percentage: np.array,
+    simulations: int = 10,
+    demand_std: float = 0,
+    production_std: float = 0,
+    gridsize: np.array = None,
+    population: int = None,
+    positions: np.array = None,
+    producers_reservoir: np.array = None,
+    current_reservoir: np.array = None,
+    index_interval: list = [8, 17],
+    links_per_threshold: float = 0.05
+    ):
+    """
+    Simulates cities with different connection lengths, reservoir capacities,
+    producer percentages and reservoir percentages using all threads of the
+    CPU. Each parameter combination is simulated 'simulations' amount of times.
 
-# Simulate with errorbars (old code -> rewrite):
+    Executes create_and_simulate multiple times with varying connection length,
+    reservoir capacity, producer percentage and reservoir percentage.
 
-# spp = 10
+    Important parameters
+    --------------------
+    * connection_lengths: np.array
+        1D-Array of the connection lengths
+    * capacity_reservoir: np.array
+        1D-Array of the reservoir capacities
+    * producer_percentage: np.array
+        1D-Array of the producer percentages
+    * reservoir_percentage: np.array
+        1D-Array of the reservoir percentages
+    * simulations: int (default = 10)
+        Number of simulations per parameter combination
+    * For the other parameters see create_and_simulate
 
-# energy_loss_per = np.zeros((len(con_lengths), len(prod_per), spp))
-# supply_per = np.zeros((len(con_lengths), len(prod_per), spp))
+    Returns
+    -------
+    * links_percentage_mean: np.array
+        Array of shape(len(connection_lengths),
+                       len(capacity_reservoir),
+                       len(producer_percentage),
+                       len(reservoir_percentage))
+        with the mean links percentage of a specific setting at the
+        corresponding position in the array.
+    * energy_loss_percentage_mean: np.array
+        Array of shape(len(connection_lengths),
+                       len(capacity_reservoir),
+                       len(producer_percentage),
+                       len(reservoir_percentage))
+        with the mean energy loss percentage of a specific setting at the
+        corresponding position in the array.
+    * supply_percentage_mean: np.array
+        Array of shape(len(connection_lengths),
+                       len(capacity_reservoir),
+                       len(producer_percentage),
+                       len(reservoir_percentage))
+        with the mean supply percentage of a specific setting at the
+        corresponding position in the array.
+    * 'arrays above'_std: np.array
+        Array of shape(len(connection_lengths),
+                       len(capacity_reservoir),
+                       len(producer_percentage),
+                       len(reservoir_percentage))
+        with the standard deviations of the values above.
+    
+    """
+    links_percentage = np.zeros((len(connection_lengths),
+                                 len(capacity_reservoir),
+                                 len(producer_percentage),
+                                 len(reservoir_percentage),
+                                 simulations))
+    energy_loss_percentage  = np.zeros((len(connection_lengths),
+                                        len(capacity_reservoir),
+                                        len(producer_percentage),
+                                        len(reservoir_percentage),
+                                        simulations))
+    supply_percentage  = np.zeros((len(connection_lengths),
+                                   len(capacity_reservoir),
+                                   len(producer_percentage),
+                                   len(reservoir_percentage),
+                                   simulations))
 
-# for i in range(spp):
-#     links_per, energy_loss_per[:, :, i], supply_per[:, :, i] = batch_simulate_multiprocess(
-#         base_con_profile, 
-#         con_std,
-#         base_pro_profile,
-#         pro_std,
-#         population,
-#         prod_per,
-#         matrix_func,
-#         con_lengths,
-#         index_interval,
-#         links_per_threshold,
-#         positions = positions)
+    par_list = []
 
-# mep = np.mean(energy_loss_per, axis=2)
-# msp = np.mean(supply_per, axis=2)
+    for length in connection_lengths:
+        for cap in capacity_reservoir:
+            for prod in producer_percentage:
+                for res in reservoir_percentage:
+                    for i in range(simulations):
+                        par_list.append([
+                            link_agents,
+                            distr_energy,
+                            base_demand_profile,
+                            base_production_profile,
+                            length,
+                            cap,
+                            current_reservoir,
+                            demand_std,
+                            production_std,
+                            gridsize,
+                            population,
+                            prod,
+                            res,
+                            positions,
+                            producers_reservoir,
+                            index_interval,
+                            links_per_threshold
+                        ])
 
-# umep = np.std(energy_loss_per, axis=2)
-# umsp = np.std(supply_per, axis=2)
+    with Pool() as pool:
+        results = pool.starmap(create_and_simulate, par_list)
+
+    n = 0
+    for i in range(len(connection_lengths)):
+        for j in range(len(capacity_reservoir)):
+            for k in range(len(producer_percentage)):
+                for l in range(len(reservoir_percentage)):
+                    for m in range(simulations):
+                        links_percentage[i, j, k, l, m] = results[n][0]
+                        energy_loss_percentage[i, j, k, l, m] = results[n][1]
+                        supply_percentage[i, j, k, l, m] = results[n][2]
+    
+                        n += 1
+                        
+    links_percentage_mean = np.mean(links_percentage, axis=4)
+    energy_loss_percentage_mean = np.mean(energy_loss_percentage, axis=4)
+    supply_percentage_mean = np.mean(supply_percentage, axis=4)
+    
+    links_percentage_std = np.std(links_percentage, axis=4)
+    energy_loss_percentage_std = np.std(energy_loss_percentage, axis=4)
+    supply_percentage_std = np.std(supply_percentage, axis=4)
+
+    return links_percentage_mean, energy_loss_percentage_mean, \
+           supply_percentage_mean, links_percentage_std, \
+           energy_loss_percentage_std, supply_percentage_std
