@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+
 def plot_prod_index_conlengths(
     path: str,
     prod_per: np.array,

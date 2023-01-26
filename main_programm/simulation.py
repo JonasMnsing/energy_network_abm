@@ -771,3 +771,86 @@ def batch_simulate(
     return links_percentage_mean, energy_loss_percentage_mean, \
            supply_percentage_mean, links_percentage_std, \
            energy_loss_percentage_std, supply_percentage_std
+
+
+
+
+def batch_simulate_ruben(
+    link_agents,
+    distr_energy,
+    base_demand_profile: np.array,
+    base_production_profile: np.array,
+    connection_lengths: np.array,
+    simulations: int = 10,
+    demand_std: float = 0,
+    production_std: float = 0,
+    positionsfunc = None,
+    producers_reservoir: np.array = None,
+    index_interval: list = [8, 17],
+    links_per_threshold: float = 0.05,
+    positionsArgs: np.array = None
+    ):
+  
+    links_percentage = np.zeros((len(connection_lengths),
+                                 len(positionsArgs),
+                                 simulations))
+    energy_loss_percentage  = np.zeros((len(connection_lengths),
+                                        len(positionsArgs),
+                                        simulations))
+    supply_percentage  = np.zeros((len(connection_lengths),
+                                   len(positionsArgs),
+                                   simulations))
+
+    par_list = []
+
+
+    for length in connection_lengths:
+        for args in positionsArgs:
+                for i in range(simulations):
+                    pos = positionsfunc(*args)
+                    prod= np.array([[bool(i[2]), False] for i in pos]) 
+
+                    par_list.append([
+                        link_agents,
+                        distr_energy,
+                        base_demand_profile,
+                        base_production_profile,
+                        length,
+                        0,
+                        None,
+                        demand_std,
+                        production_std,
+                        None,
+                        None,
+                        None,
+                        None,
+                        pos[:, 0:2],
+                        prod,
+                        index_interval,
+                        links_per_threshold
+                    ])
+
+    with Pool() as pool:
+        results = pool.starmap(create_and_simulate, par_list)
+
+    n = 0
+    for i in range(len(connection_lengths)):
+        for j in range(len(positionsArgs)):
+                for l in range(simulations):
+                    links_percentage[i, j, l] = results[n][0]
+                    energy_loss_percentage[i, j, l] = results[n][1]
+                    supply_percentage[i, j, l] = results[n][2]
+    
+                    n += 1
+                        
+    links_percentage_mean = np.mean(links_percentage, axis=2)
+    energy_loss_percentage_mean = np.mean(energy_loss_percentage, axis=2)
+    supply_percentage_mean = np.mean(supply_percentage, axis=2)
+    
+    links_percentage_std = np.std(links_percentage, axis=2)
+    energy_loss_percentage_std = np.std(energy_loss_percentage, axis=2)
+    supply_percentage_std = np.std(supply_percentage, axis=2)
+
+    return links_percentage_mean, energy_loss_percentage_mean, \
+           supply_percentage_mean, links_percentage_std, \
+           energy_loss_percentage_std, supply_percentage_std
